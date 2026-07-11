@@ -19,3 +19,37 @@
 [2026-07-10 02:02:28] TƏHLÜKƏ: 127.0.0.1 adresindən DDoS/Spam hücumu təsbit edildi! Sorğu bloklandı.
 [2026-07-10 02:02:30] YÖNLƏNDİRİLDİ: GPT4-Inference -> AI-Cluster-Node-03 (Skor: 14.34)
 [2026-07-10 02:02:32] YÖNLƏNDİRİLDİ: GPT4-Inference -> AI-Cluster-Node-01 (Skor: 32.34)
+[23:42:55] CPU: 79% | Temp: 64.8°C | Energy: 412W
+[23:42:57] CPU: 76% | Temp: 56.5°C | Energy: 409W
+[23:42:59] CPU: 45% | Temp: 74.3°C | Energy: 330W
+[23:43:01] CPU: 40% | Temp: 59.5°C | Energy: 489W
+[23:43:03] CPU: 67% | Temp: 57.0°C | Energy: 374W
+[23:43:05] CPU: 71% | Temp: 52.9°C | Energy: 385W
+[23:43:07] CPU: 64% | Temp: 73.3°C | Energy: 337W
+[23:43:09] CPU: 42% | Temp: 52.9°C | Energy: 381W
+[23:43:11] CPU: 50% | Temp: 65.8°C | Energy: 304W
+[23:43:13] CPU: 62% | Temp: 58.1°C | Energy: 421W
+[23:43:15] CPU: 56% | Temp: 47.3°C | Energy: 398W
+[23:43:17] CPU: 79% | Temp: 68.2°C | Energy: 498W
+[23:43:19] CPU: 73% | Temp: 53.7°C | Energy: 486W
+[23:43:21] CPU: 75% | Temp: 72.6°C | Energy: 377W
+[23:43:23] CPU: 69% | Temp: 55.6°C | Energy: 422W
+[23:43:25] CPU: 65% | Temp: 74.8°C | Energy: 433W
+[23:43:27] CPU: 43% | Temp: 51.4°C | Energy: 346W
+[23:43:29] CPU: 64% | Temp: 67.1°C | Energy: 334W
+[23:43:31] CPU: 60% | Temp: 55.3°C | Energy: 334W
+[23:43:36] CPU: 60% | Temp: 51.8°C | Energy: 311W
+[23:43:38] CPU: 65% | Temp: 70.5°C | Energy: 455W
+[23:43:40] CPU: 65% | Temp: 70.7°C | Energy: 421W
+[23:43:42] CPU: 69% | Temp: 62.3°C | Energy: 421W
+[23:43:55] CPU: 40% | Temp: 67.9°C | Energy: 460W
+[23:43:57] CPU: 53% | Temp: 72.3°C | Energy: 321W
+[23:43:59] CPU: 61% | Temp: 63.0°C | Energy: 385W
+[23:44:01] CPU: 51% | Temp: 59.4°C | Energy: 349W
+[23:44:03] CPU: 75% | Temp: 55.8°C | Energy: 431W
+[23:44:05] CPU: 58% | Temp: 58.9°C | Energy: 399W
+[23:44:07] CPU: 49% | Temp: 48.0°C | Energy: 400W
+[23:44:09] CPU: 68% | Temp: 58.0°C | Energy: 316W
+[23:44:11] CPU: 73% | Temp: 66.3°C | Energy: 478W
+[23:44:13] CPU: 59% | Temp: 66.1°C | Energy: 356W
+[23:44:15] CPU: 55% | Temp: 46.2°C | Energy: 490W
