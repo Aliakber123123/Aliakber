@@ -3,121 +3,211 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"math/rand"
 	"net/http"
-	"os"
 	"sync"
+	"sync/atomic"
 	"time"
-
-	"github.com/shirou/gopsutil/v3/cpu"
 )
 
-// Global mühitdə anlıq metrixləri saxlamaq və thread-safe oxumaq üçün struktur
-type SafeMetrics struct {
-	mu          sync.RWMutex
-	CPULoad     int
-	Temperature float64
-	EnergyUsage int
+// Server - Enterprise infrastruktur vahidi
+type Server struct {
+	ID          string  `json:"id"`
+	CPULoad     int     `json:"cpu_load"`
+	Temperature float64 `json:"temperature"`
+	PowerUsage  int     `json:"power_usage"`
+	IsActive    bool    `json:"is_active"`
 }
 
-var currentMetrics SafeMetrics
-
-// RateLimiter - Hər IP üçün daxili sorğu sayğacı
-type RateLimiter struct {
-	mu           sync.Mutex
-	visitorCount map[string]int
-	lastReset    time.Time
+// TransactionTask - İcra olunmağı gözləyən irimiqyaslı istifadəçi sorğusu
+type TransactionTask struct {
+	ID        int
+	Payload   string
+	CreatedAt time.Time
 }
 
-var limiter = RateLimiter{
-	visitorCount: make(map[string]int),
-	lastReset:    time.Now(),
+// ClusterManager - 100,000 serverlik miqyası və FinOps qənaətini idarə edən nüvə
+type ClusterManager struct {
+	mu              sync.RWMutex
+	Servers         map[string]*Server
+	TotalRequests   int64
+	DroppedRequests int64
+	MoneySavedUSD   float64
+	CostPerWattHour float64
+	TaskQueue       chan TransactionTask
 }
 
-// SecurityMiddleware - Bütün sorğuları yoxlayan kiber-müdafiə divarı
-func SecurityMiddleware(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		limiter.mu.Lock()
-		
-		// Hər 5 saniyədən bir sayğacları sıfırlayırıq ki, normal istifadəçilər blokda qalmasın
-		if time.Since(limiter.lastReset) > 5*time.Second {
-			limiter.visitorCount = make(map[string]int)
-			limiter.lastReset = time.Now()
+var manager = ClusterManager{
+	Servers:         make(map[string]*Server),
+	CostPerWattHour: 0.00015,
+	TaskQueue:       make(chan TransactionTask, 5000),
+}
+
+func init() {
+	// 10 magistral server klaster mərkəzini yaradırıq
+	for i := 1; i <= 10; i++ {
+		id := fmt.Sprintf("srv-core-matrix-0%d", i)
+		manager.Servers[id] = &Server{
+			ID:          id,
+			CPULoad:     20,
+			Temperature: 45.0,
+			PowerUsage:  150,
+			IsActive:    true,
 		}
-
-		// Sorğu göndərən istifadəçinin IP-sini təyin edirik
-		visitorIP := r.RemoteAddr
-
-		// Həmin IP-dən gələn sorğu sayını 1 vahid artırırıq
-		limiter.visitorCount[visitorIP]++
-
-		// LIMIT: Əgər eyni IP 5 saniyə daxilində 5-dən çox sorğu göndərərsə, blokla!
-		if limiter.visitorCount[visitorIP] > 5 {
-			limiter.mu.Unlock()
-			
-			// Kiber-təhlükəsizlik mərkəzinə dərhal xəbərdarlıq basırıq
-			fmt.Printf("🛡️ [WAF ALERT] DDoS/Brute-Force təhlükəsi bloklandı! IP: %s | Sorğu sayı: %d\n", visitorIP, limiter.visitorCount[visitorIP])
-			
-			// Hücum edənə HTTP 429 Too Many Requests statusu qaytarırıq
-			w.WriteHeader(http.StatusTooManyRequests)
-			w.Write([]byte(`{"error": "DDoS/Flood Attack Detected. Your IP has been throttled by WAF."}`))
-			return
-		}
-		limiter.mu.Unlock()
-
-		// Əgər hər şey qaydasındadırsa, sorğunun keçməsinə icazə ver
-		next(w, r)
 	}
 }
 
-func main() {
-	fmt.Println("🚀 API Gateway & Real-Time WAF Security Monitor Aktivləşdirilir...")
+// BackgroundOptimizer - Hər saniyə FinOps analizini aparan mühərrik
+func BackgroundOptimizer() {
+	for {
+		time.Sleep(1 * time.Second)
+		manager.mu.Lock()
 
-	// 1. GOROUTINE: Real OS CPU Monitor
+		var totalClusterLoad = 0
+		var activeCount = 0
+
+		for _, s := range manager.Servers {
+			if s.IsActive {
+				if s.CPULoad > 10 {
+					s.CPULoad -= rand.Intn(10)
+				}
+				s.Temperature = 35.0 + (float64(s.CPULoad) * 0.4)
+				s.PowerUsage = 150 + (s.CPULoad * 5)
+				totalClusterLoad += s.CPULoad
+				activeCount++
+			} else {
+				s.PowerUsage = 12
+				s.Temperature = 22.5
+				s.CPULoad = 0
+			}
+		}
+
+		averageLoad := 0
+		if activeCount > 0 {
+			averageLoad = totalClusterLoad / activeCount
+		}
+
+		// STRATEGİYA: Resurs İsrafının Qarşısının Alınması (Cost Cutter)
+		if averageLoad < 25 && activeCount > 2 {
+			for _, s := range manager.Servers {
+				if s.IsActive {
+					s.IsActive = false
+					fmt.Printf("📉 [FINOPS OPTIMIZER] %s söndürüldü. Klaster yükü: %d%%. Resurs israfı dayandırıldı.\n", s.ID, averageLoad)
+					break
+				}
+			}
+		}
+
+		// STRATEGİYA: Proaktiv Auto-Scaling (SLA Qoruyucu)
+		if (averageLoad > 65 || len(manager.TaskQueue) > 100) && activeCount < 10 {
+			for _, s := range manager.Servers {
+				if !s.IsActive {
+					s.IsActive = true
+					s.CPULoad = 40
+					fmt.Printf("🚀 [PROACTIVE AUTO-SCALE] Quyruq dolur (%d tapşırıq). %s dərhal oyadıldı!\n", len(manager.TaskQueue), s.ID)
+					break
+				}
+			}
+		}
+
+		// Maliyyə qənaət hesabı
+		for _, s := range manager.Servers {
+			if !s.IsActive {
+				savedWatts := 350 - s.PowerUsage
+				manager.MoneySavedUSD += (float64(savedWatts) / 1000.0) * (manager.CostPerWattHour / 3600.0) * 100000
+			}
+		}
+
+		fmt.Printf("📊 [CLUSTERS] Aktiv: %d/10 | Quyruqda Gözləyən: %d | Cəmi Qənaət: $%.2f USD\n", activeCount, len(manager.TaskQueue), manager.MoneySavedUSD)
+		manager.mu.Unlock()
+	}
+}
+
+// CoreWorkerPool - Serverlərin daxilində tapşırıqları paralel icra edən işçi mühərriklər
+func CoreWorkerPool() {
+	for range manager.TaskQueue {
+		manager.mu.Lock()
+		var assignedServer *Server
+		minLoad := 101
+
+		for _, s := range manager.Servers {
+			if s.IsActive && s.CPULoad < minLoad {
+				minLoad = s.CPULoad
+				assignedServer = s
+			}
+		}
+
+		if assignedServer != nil {
+			assignedServer.CPULoad += 5
+			if assignedServer.CPULoad > 100 {
+				assignedServer.CPULoad = 100
+				atomic.AddInt64(&manager.DroppedRequests, 1)
+			}
+		} else {
+			atomic.AddInt64(&manager.DroppedRequests, 1)
+		}
+		manager.mu.Unlock()
+
+		time.Sleep(time.Duration(50+rand.Intn(100)) * time.Millisecond)
+	}
+}
+
+// GetClusterDashboard - Dashboard məlumatları
+func GetClusterDashboard(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	manager.mu.RLock()
+	defer manager.mu.RUnlock()
+
+	response := map[string]interface{}{
+		"infrastructure_status":      "OPERATIONAL",
+		"simulated_global_scale":     "100,000 Enterprise Nodes",
+		"total_processed_requests":   atomic.LoadInt64(&manager.TotalRequests),
+		"sla_dropped_requests":       atomic.LoadInt64(&manager.DroppedRequests),
+		"enterprise_money_saved_usd": fmt.Sprintf("$%.2f", manager.MoneySavedUSD),
+		"queue_backlog_count":        len(manager.TaskQueue),
+		"cluster_matrix":             manager.Servers,
+	}
+	json.NewEncoder(w).Encode(response)
+}
+
+// SimulateTrafficBurst - Trafik partlayışı simulyatoru
+func SimulateTrafficBurst(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "application/json")
+	
 	go func() {
-		for {
-			percentages, err := cpu.Percent(time.Second, false)
-			cpuVal := 0
-			if err == nil && len(percentages) > 0 {
-				cpuVal = int(percentages[0])
+		for i := 1; i <= 1000; i++ {
+			atomic.AddInt64(&manager.TotalRequests, 1)
+			task := TransactionTask{
+				ID:        int(atomic.LoadInt64(&manager.TotalRequests)),
+				Payload:   "SECURE_TELEMETRY_DATA_PACKET",
+				CreatedAt: time.Now(),
 			}
-
-			currentMetrics.mu.Lock()
-			currentMetrics.CPULoad = cpuVal
-			currentMetrics.Temperature = 40.0 + (float64(cpuVal) * 0.4)
-			currentMetrics.EnergyUsage = 250 + (cpuVal * 3)
-			currentMetrics.mu.Unlock()
-
-			// Fayla loq yazılması
-			file, err := os.OpenFile("datacenter_energy_log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-			if err == nil {
-				logLine := fmt.Sprintf("[%s] CPU: %d%% | Temp: %.1f°C | Power: %dW\n",
-					time.Now().Format("15:04:05"), cpuVal, currentMetrics.Temperature, currentMetrics.EnergyUsage)
-				file.WriteString(logLine)
-				file.Close()
+			
+			select {
+			case manager.TaskQueue <- task:
+			default:
+				atomic.AddInt64(&manager.DroppedRequests, 1)
 			}
-			time.Sleep(1 * time.Second)
 		}
 	}()
 
-	// HTTP ENDPOINT: Artıq xüsusi SecurityMiddleware qoruması altındadır!
-	http.HandleFunc("/api/metrics", SecurityMiddleware(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
+	w.Write([]byte(`{"message": "🚀 1000 Yüksək Sürətli Sorğu Klaster Quyruğuna Buraxıldı! Auto-scaling və Worker Pool işə düşür."}`))
+}
 
-		currentMetrics.mu.RLock()
-		data := map[string]interface{}{
-			"status":      "active",
-			"cpu_load":    fmt.Sprintf("%d%%", currentMetrics.CPULoad),
-			"temperature": fmt.Sprintf("%.1f°C", currentMetrics.Temperature),
-			"power_w":     currentMetrics.EnergyUsage,
-			"timestamp":   time.Now().Format("2006-01-02 15:04:05"),
-		}
-		currentMetrics.mu.RUnlock()
+func main() {
+	fmt.Println("⚙️ Enterprise Scaled Cluster Core Manager Engine Start...")
 
-		json.NewEncoder(w).Encode(data)
-	}))
+	for i := 1; i <= 5; i++ {
+		go CoreWorkerPool()
+	}
 
-	fmt.Println("🌐 Protected API Server hazır: http://localhost:8080/api/metrics")
+	go BackgroundOptimizer()
+
+	http.HandleFunc("/api/cluster/dashboard", GetClusterDashboard)
+	http.HandleFunc("/api/cluster/simulate-burst", SimulateTrafficBurst)
+
+	fmt.Println("🌐 Enterprise Gateway Ready: http://localhost:8080/api/cluster/dashboard")
 	if err := http.ListenAndServe(":8080", nil); err != nil {
-		fmt.Println("❌ Server başladılarkən xəta yarandı:", err)
+		fmt.Println("❌ Server Error:", err)
 	}
 }
