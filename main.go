@@ -1,93 +1,123 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
-	"math/rand"
+	"net/http"
 	"os"
+	"sync"
 	"time"
+
+	"github.com/shirou/gopsutil/v3/cpu"
 )
 
-// DataCenterMetrics - Serverin anlıq hardware göstəriciləri
-type DataCenterMetrics struct {
+// Global mühitdə anlıq metrixləri saxlamaq və thread-safe oxumaq üçün struktur
+type SafeMetrics struct {
+	mu          sync.RWMutex
 	CPULoad     int
 	Temperature float64
-	EnergyUsage int // Vatt (W) ilə
+	EnergyUsage int
+}
+
+var currentMetrics SafeMetrics
+
+// RateLimiter - Hər IP üçün daxili sorğu sayğacı
+type RateLimiter struct {
+	mu           sync.Mutex
+	visitorCount map[string]int
+	lastReset    time.Time
+}
+
+var limiter = RateLimiter{
+	visitorCount: make(map[string]int),
+	lastReset:    time.Now(),
+}
+
+// SecurityMiddleware - Bütün sorğuları yoxlayan kiber-müdafiə divarı
+func SecurityMiddleware(next http.HandlerFunc) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		limiter.mu.Lock()
+		
+		// Hər 5 saniyədən bir sayğacları sıfırlayırıq ki, normal istifadəçilər blokda qalmasın
+		if time.Since(limiter.lastReset) > 5*time.Second {
+			limiter.visitorCount = make(map[string]int)
+			limiter.lastReset = time.Now()
+		}
+
+		// Sorğu göndərən istifadəçinin IP-sini təyin edirik
+		visitorIP := r.RemoteAddr
+
+		// Həmin IP-dən gələn sorğu sayını 1 vahid artırırıq
+		limiter.visitorCount[visitorIP]++
+
+		// LIMIT: Əgər eyni IP 5 saniyə daxilində 5-dən çox sorğu göndərərsə, blokla!
+		if limiter.visitorCount[visitorIP] > 5 {
+			limiter.mu.Unlock()
+			
+			// Kiber-təhlükəsizlik mərkəzinə dərhal xəbərdarlıq basırıq
+			fmt.Printf("🛡️ [WAF ALERT] DDoS/Brute-Force təhlükəsi bloklandı! IP: %s | Sorğu sayı: %d\n", visitorIP, limiter.visitorCount[visitorIP])
+			
+			// Hücum edənə HTTP 429 Too Many Requests statusu qaytarırıq
+			w.WriteHeader(http.StatusTooManyRequests)
+			w.Write([]byte(`{"error": "DDoS/Flood Attack Detected. Your IP has been throttled by WAF."}`))
+			return
+		}
+		limiter.mu.Unlock()
+
+		// Əgər hər şey qaydasındadırsa, sorğunun keçməsinə icazə ver
+		next(w, r)
+	}
 }
 
 func main() {
-	fmt.Println("🚀 Go-Based Data Center Core & Security Monitor Başladılır...")
+	fmt.Println("🚀 API Gateway & Real-Time WAF Security Monitor Aktivləşdirilir...")
 
-	// Kanallar (Channels): Goroutine-lər arasında təhlükəsiz məlumat ötürülməsi üçün "borular"
-	metricsChan := make(chan DataCenterMetrics)
-	alertChan := make(chan string)
-
-	// 1. GOROUTINE: Hardware Monitor (Arxa planda fasiləsiz datanı simulyasiya edir)
+	// 1. GOROUTINE: Real OS CPU Monitor
 	go func() {
 		for {
-			// Real-time sensor oxunmasını simulyasiya edirik
-			metrics := DataCenterMetrics{
-				CPULoad:     rand.Intn(40) + 40,        // 40% - 80% arası CPU
-				Temperature: 45.0 + rand.Float64()*30, // 45°C - 75°C arası istilik
-				EnergyUsage: rand.Intn(200) + 300,      // 300W - 500W arası enerji
+			percentages, err := cpu.Percent(time.Second, false)
+			cpuVal := 0
+			if err == nil && len(percentages) > 0 {
+				cpuVal = int(percentages[0])
 			}
 
-			// Datanı kanal vasitəsilə mərkəzə ötürürük
-			metricsChan <- metrics
+			currentMetrics.mu.Lock()
+			currentMetrics.CPULoad = cpuVal
+			currentMetrics.Temperature = 40.0 + (float64(cpuVal) * 0.4)
+			currentMetrics.EnergyUsage = 250 + (cpuVal * 3)
+			currentMetrics.mu.Unlock()
 
-			// Hər 2 saniyədən bir oxuma həyata keçirilir
-			time.Sleep(2 * time.Second)
+			// Fayla loq yazılması
+			file, err := os.OpenFile("datacenter_energy_log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+			if err == nil {
+				logLine := fmt.Sprintf("[%s] CPU: %d%% | Temp: %.1f°C | Power: %dW\n",
+					time.Now().Format("15:04:05"), cpuVal, currentMetrics.Temperature, currentMetrics.EnergyUsage)
+				file.WriteString(logLine)
+				file.Close()
+			}
+			time.Sleep(1 * time.Second)
 		}
 	}()
 
-	// 2. GOROUTINE: Kiber-Təhlükəsizlik / Anomaliya Detektoru
-	// Bu modul hardware monitorundan asılı olmadan, paralel şəkildə kiber riskləri skan edir
-	go func() {
-		for {
-			time.Sleep(5 * time.Second) // Hər 5 saniyədən bir təhlükəsizlik yoxlanışı
+	// HTTP ENDPOINT: Artıq xüsusi SecurityMiddleware qoruması altındadır!
+	http.HandleFunc("/api/metrics", SecurityMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 
-			// Simulyasiya: Əgər CPU yükü qəfil 75%-i keçərsə, potensial DDoS həyəcanı ver
-			currentHour := time.Now().Hour()
-			if currentHour > 0 { // Davamlı aktiv olması üçün şərti simulyasiya
-				// Təsadüfi olaraq kiber təhlükəsizlik insidenti simulyasiyası
-				if rand.Float32() > 0.7 {
-					alertChan <- "⚠️ TƏHLÜKƏ: Müəyyən olunmamış IP-lərdən yüksək trafik qeydə alındı! Potensial DDoS!"
-				}
-			}
+		currentMetrics.mu.RLock()
+		data := map[string]interface{}{
+			"status":      "active",
+			"cpu_load":    fmt.Sprintf("%d%%", currentMetrics.CPULoad),
+			"temperature": fmt.Sprintf("%.1f°C", currentMetrics.Temperature),
+			"power_w":     currentMetrics.EnergyUsage,
+			"timestamp":   time.Now().Format("2006-01-02 15:04:05"),
 		}
-	}()
+		currentMetrics.mu.RUnlock()
 
-	// 3. GOROUTINE: Ağıllı Enerji Loqqeri (Telemetry Logging)
-	// Bu modul sensor datalarını qəbul edir və fasiləsiz fayla yazır
-	go func() {
-		file, err := os.OpenFile("datacenter_energy_log.txt", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-		if err != nil {
-			fmt.Println("❌ Log faylı açıla bilmədi:", err)
-			return
-		}
-		defer file.Close()
+		json.NewEncoder(w).Encode(data)
+	}))
 
-		for m := range metricsChan {
-			logLine := fmt.Sprintf("[%s] CPU: %d%% | Temp: %.1f°C | Energy: %dW\n",
-				time.Now().Format("15:04:05"), m.CPULoad, m.Temperature, m.EnergyUsage)
-
-			_, err := file.WriteString(logLine)
-			if err != nil {
-				fmt.Println("❌ Loq yazıla bilmədi:", err)
-			}
-		}
-	}()
-
-	// MAIN LOOP: Əsas mühərrik kanalları dinləyir və ekrana çıxarır (Non-blocking multiplexing)
-	for {
-		select {
-		case alert := <-alertChan:
-			// Kiber-təhlükəsizlik modulundan gələn kritik siqnal dərhal ekrana qırmızı və ya diqqət çəkən tonda çıxır
-			fmt.Println("\n=======================================================")
-			fmt.Println(alert)
-			fmt.Println("=======================================================\n")
-		case <-time.After(1 * time.Second):
-			// Hər saniyə mərkəzi idarəetmə panelinə sistemin stabil işlədiyini bildiririk
-			fmt.Printf("Data Center Core Status: STABIL | Zaman: %s\n", time.Now().Format("15:04:05"))
-		}
+	fmt.Println("🌐 Protected API Server hazır: http://localhost:8080/api/metrics")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		fmt.Println("❌ Server başladılarkən xəta yarandı:", err)
 	}
 }
